@@ -1,6 +1,72 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import logo from "./Universal Logo.png";
+import publisherBg from "./Baseline for inventory manager.png";
 
-function HardwareInventory({
+// 🔹 Reusable editable header
+function EditableHeader({ title, setTitle, storageKey }) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Load title from localStorage on mount
+  useEffect(() => {
+    const savedTitle = localStorage.getItem(storageKey);
+    if (savedTitle) setTitle(savedTitle);
+  }, [storageKey, setTitle]);
+
+  // Save whenever it changes
+  useEffect(() => {
+    localStorage.setItem(storageKey, title);
+  }, [title, storageKey]);
+
+  return (
+    <div className="mb-6 text-3xl font-bold text-center">
+      {isEditing ? (
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onBlur={() => setIsEditing(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") setIsEditing(false);
+          }}
+          autoFocus
+          className="w-full max-w-lg p-2 border rounded bg-gray-900 text-[#DC143C] text-center"
+        />
+      ) : (
+        <h2
+          className="cursor-pointer hover:underline"
+          onClick={() => setIsEditing(true)}
+        >
+          {title}
+        </h2>
+      )}
+    </div>
+  );
+}
+
+// 🔹 Shared inline-editable table cell
+function EditableCell({ isEditing, value, onChange, finishEditing }) {
+  return isEditing ? (
+    <input
+      type="text"
+      autoFocus
+      defaultValue={value}
+      onBlur={(e) => {
+        onChange(e.target.value.trim());
+        finishEditing();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Escape") e.target.blur();
+      }}
+      className="w-full p-2 border rounded bg-gray-900 text-[#DC143C]"
+    />
+  ) : (
+    value || <span className="italic text-gray-500">—</span>
+  );
+}
+
+// 🔹 Base Inventory Component
+function BaseInventory({
+  storageKey,
   inventory,
   setInventory,
   editingId,
@@ -13,36 +79,51 @@ function HardwareInventory({
   setLastDeleted,
   undoTimeoutId,
   setUndoTimeoutId,
+  title,
+  setTitle,
+  titleKey,
+  fields,
+  placeholders,
 }) {
-  // Add hardware item
-  const [newModel, setNewModel] = useState("");
-  const [newSerial, setNewSerial] = useState("");
-  const [newMac, setNewMac] = useState("");
-  const [newLocation, setNewLocation] = useState("");
+  const [formValues, setFormValues] = useState(
+    Object.fromEntries(fields.map((f) => [f, ""]))
+  );
+
+  // Load inventory from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) setInventory(JSON.parse(saved));
+  }, [storageKey, setInventory]);
+
+  // Save inventory whenever it changes
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(inventory));
+  }, [inventory, storageKey]);
 
   const handleAddItem = (e) => {
     e.preventDefault();
-    if (!newModel.trim() || !newSerial.trim()) {
-      alert("Model and Serial Number are required");
+
+    if (!formValues[fields[0]].trim() || !formValues[fields[1]].trim()) {
+      alert(`${placeholders[0]} and ${placeholders[1]} are required`);
       return;
     }
+
     const newItem = {
       id: inventory.length ? inventory[inventory.length - 1].id + 1 : 1,
-      model: newModel.trim(),
-      serial: newSerial.trim(),
-      mac: newMac.trim(),
-      location: newLocation.trim(),
     };
-    setInventory([...inventory, newItem]);
-    setNewModel("");
-    setNewSerial("");
-    setNewMac("");
-    setNewLocation("");
-  };
 
-  const startEditing = (id, field) => {
-    setEditingId(id);
-    setEditingField(field);
+    fields.forEach((field) => {
+      if (field === "quantity") {
+        const quantityNum = parseInt(formValues[field], 10);
+        newItem[field] =
+          isNaN(quantityNum) || quantityNum < 0 ? 0 : quantityNum;
+      } else {
+        newItem[field] = formValues[field].trim();
+      }
+    });
+
+    setInventory([...inventory, newItem]);
+    setFormValues(Object.fromEntries(fields.map((f) => [f, ""])));
   };
 
   const finishEditing = () => {
@@ -92,7 +173,7 @@ function HardwareInventory({
     const duplicated = {
       ...original,
       id: inventory.length ? inventory[inventory.length - 1].id + 1 : 1,
-      model: original.model + " (Copy)",
+      [fields[0]]: original[fields[0]] + " (Copy)",
     };
     const newInventory = [
       ...inventory.slice(0, index + 1),
@@ -104,7 +185,7 @@ function HardwareInventory({
   };
 
   const copyItemToClipboard = (item) => {
-    const text = `Model: ${item.model}\tSerial: ${item.serial}\tMAC: ${item.mac}\tLocation: ${item.location}`;
+    const text = fields.map((f) => `${f}: ${item[f]}`).join("\t");
     navigator.clipboard.writeText(text).then(() => {
       alert(`Copied: ${text}`);
     });
@@ -112,107 +193,67 @@ function HardwareInventory({
   };
 
   return (
-    <div>
-      <h2 className="mb-6 text-3xl font-bold text-center text-blue-900">
-        Hardware Inventory
-      </h2>
+    <div className="p-6 bg-gray-900 bg-opacity-80 rounded border-4 border-[#DC143C] text-[#DC143C] shadow-lg max-w-full">
+      <EditableHeader title={title} setTitle={setTitle} storageKey={titleKey} />
 
       <form
         onSubmit={handleAddItem}
         className="grid grid-cols-1 gap-4 mb-8 md:grid-cols-5"
-        aria-label="Add new hardware item"
       >
-        <input
-          type="text"
-          value={newModel}
-          onChange={(e) => setNewModel(e.target.value)}
-          placeholder="Model Number *"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none"
-          required
-        />
-        <input
-          type="text"
-          value={newSerial}
-          onChange={(e) => setNewSerial(e.target.value)}
-          placeholder="Serial Number *"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none"
-          required
-        />
-        <input
-          type="text"
-          value={newMac}
-          onChange={(e) => setNewMac(e.target.value)}
-          placeholder="MAC Address"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none"
-        />
-        <input
-          type="text"
-          value={newLocation}
-          onChange={(e) => setNewLocation(e.target.value)}
-          placeholder="Location"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none"
-        />
+        {fields.map((field, idx) => (
+          <input
+            key={field}
+            type={field === "quantity" ? "number" : "text"}
+            value={formValues[field]}
+            onChange={(e) =>
+              setFormValues({ ...formValues, [field]: e.target.value })
+            }
+            placeholder={placeholders[idx]}
+            min={field === "quantity" ? "0" : undefined}
+            className="p-3 border border-gray-600 rounded bg-gray-900 text-[#DC143C]"
+            required={idx < 2}
+          />
+        ))}
         <button
           type="submit"
-          className="font-semibold text-white transition-colors bg-blue-600 rounded hover:bg-blue-700"
+          className="font-semibold text-white bg-[#DC143C] rounded hover:bg-[#B0102C]"
         >
           Add Item
         </button>
       </form>
 
-      <div className="overflow-x-auto border border-gray-300 rounded shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 table-auto">
-          <thead className="bg-blue-50">
+      <div className="overflow-x-auto rounded shadow-sm">
+        <table className="min-w-full divide-y divide-gray-700 table-auto">
+          <thead className="bg-gray-900">
             <tr>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-blue-700 uppercase">
-                Model Number
-              </th>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-blue-700 uppercase">
-                Serial Number
-              </th>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-blue-700 uppercase">
-                MAC Address
-              </th>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-blue-700 uppercase">
-                Location
-              </th>
-              <th className="relative w-24 px-6 py-3">Options</th>
+              {placeholders.concat("Options").map((header, i) => (
+                <th
+                  key={i}
+                  className="px-6 py-3 text-xs font-medium tracking-wider text-left text-[#DC143C] uppercase"
+                >
+                  {header}
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-700">
             {inventory.map((item) => (
-              <tr
-                key={item.id}
-                className="transition-colors cursor-pointer hover:bg-blue-50"
-              >
-                {["model", "serial", "mac", "location"].map((field) => (
+              <tr key={item.id} className="hover:bg-gray-700">
+                {fields.map((field) => (
                   <td
                     key={field}
-                    className="px-6 py-4 whitespace-nowrap"
+                    className="px-6 py-4 whitespace-nowrap text-[#DC143C]"
                     onClick={() => {
                       setEditingId(item.id);
                       setEditingField(field);
                     }}
                   >
-                    {editingId === item.id && editingField === field ? (
-                      <input
-                        type="text"
-                        autoFocus
-                        defaultValue={item[field]}
-                        onBlur={(e) => {
-                          updateItem(item.id, field, e.target.value.trim());
-                          finishEditing();
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === "Escape") {
-                            e.target.blur();
-                          }
-                        }}
-                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      />
-                    ) : (
-                      item[field] || <span className="italic text-gray-400">—</span>
-                    )}
+                    <EditableCell
+                      isEditing={editingId === item.id && editingField === field}
+                      value={item[field]}
+                      onChange={(val) => updateItem(item.id, field, val)}
+                      finishEditing={finishEditing}
+                    />
                   </td>
                 ))}
                 <td className="relative px-4 py-4 text-center">
@@ -220,28 +261,27 @@ function HardwareInventory({
                     onClick={() =>
                       setMenuOpenId(menuOpenId === item.id ? null : item.id)
                     }
-                    aria-label="Open options menu"
-                    className="text-2xl font-bold text-gray-600 transition hover:text-blue-600"
+                    className="text-2xl font-bold text-[#DC143C]"
                   >
                     ⋮
                   </button>
                   {menuOpenId === item.id && (
-                    <div className="absolute right-0 top-full mt-1 bg-white border border-gray-300 rounded shadow-md z-20 min-w-[140px]">
+                    <div className="absolute right-0 top-full mt-1 bg-gray-900 border border-[#DC143C] rounded shadow-md z-20 min-w-[140px]">
                       <button
                         onClick={() => duplicateItem(item.id)}
-                        className="w-full px-4 py-2 text-left transition hover:bg-blue-100"
+                        className="w-full px-4 py-2 text-left hover:bg-[#B0102C]"
                       >
                         Duplicate
                       </button>
                       <button
                         onClick={() => deleteItem(item.id)}
-                        className="w-full px-4 py-2 text-left text-red-600 transition hover:bg-red-100"
+                        className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-700"
                       >
                         Delete
                       </button>
                       <button
                         onClick={() => copyItemToClipboard(item)}
-                        className="w-full px-4 py-2 text-left transition hover:bg-gray-100"
+                        className="w-full px-4 py-2 text-left hover:bg-gray-700"
                       >
                         Copy
                       </button>
@@ -250,28 +290,16 @@ function HardwareInventory({
                 </td>
               </tr>
             ))}
-            {inventory.length === 0 && (
-              <tr>
-                <td
-                  colSpan="5"
-                  className="py-8 italic text-center text-gray-500"
-                >
-                  No items found. Add new items above.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>
 
       {lastDeleted && (
-        <div className="fixed flex items-center gap-4 px-6 py-3 text-black -translate-x-1/2 bg-yellow-300 rounded shadow-lg bottom-4 left-1/2">
-          <span>Item "{lastDeleted.model}" deleted.</span>
+        <div className="flex items-center justify-between p-2 mt-4 bg-yellow-100 border rounded">
+          <span>Deleted item.</span>
           <button
-            onClick={() => {
-              undoDelete();
-            }}
-            className="px-3 py-1 text-yellow-300 bg-black rounded hover:bg-gray-800"
+            className="px-3 py-1 text-white bg-blue-600 rounded"
+            onClick={undoDelete}
           >
             Undo
           </button>
@@ -281,208 +309,122 @@ function HardwareInventory({
   );
 }
 
-function MaterialInventory({
-  materialInventory,
-  setMaterialInventory,
-}) {
-  const [newItem, setNewItem] = useState("");
-  const [newPartNumber, setNewPartNumber] = useState("");
-  const [newQuantity, setNewQuantity] = useState("");
-  const [newLocation, setNewLocation] = useState("");
-
-  const handleAddMaterial = (e) => {
-    e.preventDefault();
-    if (!newItem.trim() || !newPartNumber.trim()) {
-      alert("Item name and Part number are required");
-      return;
-    }
-    const quantityNum = parseInt(newQuantity, 10);
-    if (isNaN(quantityNum) || quantityNum < 0) {
-      alert("Quantity must be a non-negative number");
-      return;
-    }
-    const newMatItem = {
-      id: materialInventory.length ? materialInventory[materialInventory.length - 1].id + 1 : 1,
-      item: newItem.trim(),
-      partNumber: newPartNumber.trim(),
-      quantity: quantityNum,
-      location: newLocation.trim(),
-    };
-    setMaterialInventory([...materialInventory, newMatItem]);
-    setNewItem("");
-    setNewPartNumber("");
-    setNewQuantity("");
-    setNewLocation("");
-  };
-
-  return (
-    <div>
-      <h2 className="mb-6 text-3xl font-bold text-center text-green-900">
-        Material Inventory
-      </h2>
-
-      <form
-        onSubmit={handleAddMaterial}
-        className="grid grid-cols-1 gap-4 mb-8 md:grid-cols-5"
-        aria-label="Add new material item"
-      >
-        <input
-          type="text"
-          value={newItem}
-          onChange={(e) => setNewItem(e.target.value)}
-          placeholder="Item Name *"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-green-400 focus:outline-none"
-          required
-        />
-        <input
-          type="text"
-          value={newPartNumber}
-          onChange={(e) => setNewPartNumber(e.target.value)}
-          placeholder="Part Number *"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-green-400 focus:outline-none"
-          required
-        />
-        <input
-          type="number"
-          value={newQuantity}
-          onChange={(e) => setNewQuantity(e.target.value)}
-          placeholder="Quantity"
-          min="0"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-green-400 focus:outline-none"
-        />
-        <input
-          type="text"
-          value={newLocation}
-          onChange={(e) => setNewLocation(e.target.value)}
-          placeholder="Location"
-          className="p-3 border border-gray-300 rounded focus:ring-2 focus:ring-green-400 focus:outline-none"
-        />
-        <button
-          type="submit"
-          className="font-semibold text-white transition-colors bg-green-600 rounded hover:bg-green-700"
-        >
-          Add Item
-        </button>
-      </form>
-
-      <div className="overflow-x-auto border border-gray-300 rounded shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 table-auto">
-          <thead className="bg-green-50">
-            <tr>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-green-700 uppercase">
-                Item Name
-              </th>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-green-700 uppercase">
-                Part Number
-              </th>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-green-700 uppercase">
-                Quantity
-              </th>
-              <th className="px-6 py-3 text-xs font-medium tracking-wider text-left text-green-700 uppercase">
-                Location
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {materialInventory.map((item) => (
-              <tr key={item.id} className="hover:bg-green-50">
-                <td className="px-6 py-4 whitespace-nowrap">{item.item}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{item.partNumber}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{item.quantity}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{item.location}</td>
-              </tr>
-            ))}
-            {materialInventory.length === 0 && (
-              <tr>
-                <td
-                  colSpan="4"
-                  className="py-8 italic text-center text-gray-500"
-                >
-                  No items found. Add new items above.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
-  const [view, setView] = useState(null); // null = start screen
-  const [hardwareInventory, setHardwareInventory] = useState([
-    { id: 1, model: "MDL-1000", serial: "SN123456", mac: "00:1A:2B:3C:4D:5E", location: "Warehouse A" },
-    { id: 2, model: "MDL-2000", serial: "SN654321", mac: "11:22:33:44:55:66", location: "Warehouse B" },
-  ]);
-  const [materialInventory, setMaterialInventory] = useState([
-    { id: 1, item: "Nuts", partNumber: "P-123", quantity: 200, location: "Warehouse A" },
-    { id: 2, item: "Bolts", partNumber: "P-456", quantity: 500, location: "Warehouse C" },
-  ]);
+  const [view, setView] = useState(null);
 
-  // Shared states for Hardware Inventory editing/menu
+  const [hardwareInventory, setHardwareInventory] = useState([]);
+  const [materialInventory, setMaterialInventory] = useState([]);
+
   const [editingId, setEditingId] = useState(null);
   const [editingField, setEditingField] = useState(null);
   const [menuOpenId, setMenuOpenId] = useState(null);
-
-  // Undo for hardware inventory
   const [lastDeleted, setLastDeleted] = useState(null);
   const [undoTimeoutId, setUndoTimeoutId] = useState(null);
 
-  if (!view) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4 bg-gradient-to-br from-blue-50 to-white">
-        <h1 className="mb-8 text-5xl font-extrabold text-blue-900 select-none">
-          Inventory Manager
-        </h1>
-        <div className="space-y-6">
-          <button
-            onClick={() => setView("hardware")}
-            className="w-64 py-4 text-xl font-semibold text-white transition bg-blue-600 rounded-lg hover:bg-blue-700"
-          >
-            Hardware Inventory
-          </button>
-          <button
-            onClick={() => setView("material")}
-            className="w-64 py-4 text-xl font-semibold text-white transition bg-green-600 rounded-lg hover:bg-green-700"
-          >
-            Material Inventory
-          </button>
-        </div>
+  const [hardwareTitle, setHardwareTitle] = useState("Hardware Inventory");
+  const [materialTitle, setMaterialTitle] = useState("Material Inventory");
+
+  return (
+    <div
+      className="min-h-screen bg-center bg-cover"
+      style={{
+        backgroundImage: `url(${publisherBg})`,
+      }}
+    >
+      <div className="min-h-screen p-8 bg-black bg-opacity-70">
+        {!view ? (
+          <div className="flex flex-col min-h-screen px-4">
+            <header className="relative flex items-center justify-center py-8">
+              <img
+                src={logo}
+                alt="Universal Logistics Logo"
+                className="absolute object-contain w-auto h-20 top-4 left-4"
+              />
+              <h1 className="text-5xl font-extrabold text-[#DC143C] select-none text-center pl-28">
+                Universal Logistics' IT Network Inventory
+              </h1>
+            </header>
+
+            <div className="flex flex-col items-center space-y-12">
+              <button
+                onClick={() => setView("hardware")}
+                className="w-72 py-5 text-2xl font-semibold text-white bg-[#2F2F2F] border-4 border-[#DC143C] rounded-lg hover:bg-[#444444]"
+              >
+                {hardwareTitle}
+              </button>
+              <button
+                onClick={() => setView("material")}
+                className="w-72 py-5 text-2xl font-semibold text-white bg-[#2F2F2F] border-4 border-[#DC143C] rounded-lg hover:bg-[#444444]"
+              >
+                {materialTitle}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={() => setView(null)}
+              className="mb-6 text-[#DC143C] hover:underline focus:outline-none"
+            >
+              ← Back to main menu
+            </button>
+
+            {view === "hardware" ? (
+              <BaseInventory
+                storageKey="hardwareInventory"
+                titleKey="hardwareTitle"
+                inventory={hardwareInventory}
+                setInventory={setHardwareInventory}
+                editingId={editingId}
+                setEditingId={setEditingId}
+                editingField={editingField}
+                setEditingField={setEditingField}
+                menuOpenId={menuOpenId}
+                setMenuOpenId={setMenuOpenId}
+                lastDeleted={lastDeleted}
+                setLastDeleted={setLastDeleted}
+                undoTimeoutId={undoTimeoutId}
+                setUndoTimeoutId={setUndoTimeoutId}
+                title={hardwareTitle}
+                setTitle={setHardwareTitle}
+                fields={["model", "serial", "mac", "location"]}
+                placeholders={[
+                  "Model Number *",
+                  "Serial Number *",
+                  "MAC Address",
+                  "Location",
+                ]}
+              />
+            ) : (
+              <BaseInventory
+                storageKey="materialInventory"
+                titleKey="materialTitle"
+                inventory={materialInventory}
+                setInventory={setMaterialInventory}
+                editingId={editingId}
+                setEditingId={setEditingId}
+                editingField={editingField}
+                setEditingField={setEditingField}
+                menuOpenId={menuOpenId}
+                setMenuOpenId={setMenuOpenId}
+                lastDeleted={lastDeleted}
+                setLastDeleted={setLastDeleted}
+                undoTimeoutId={undoTimeoutId}
+                setUndoTimeoutId={setUndoTimeoutId}
+                title={materialTitle}
+                setTitle={setMaterialTitle}
+                fields={["item", "partNumber", "quantity", "location"]}
+                placeholders={[
+                  "Item Name *",
+                  "Part Number *",
+                  "Quantity",
+                  "Location",
+                ]}
+              />
+            )}
+          </>
+        )}
       </div>
-    );
-  }
-
-   return (
-    <div className="min-h-screen p-8 bg-gradient-to-br from-blue-50 to-white">
-      <button
-        onClick={() => setView(null)}
-        className="mb-6 text-blue-700 hover:underline focus:outline-none"
-      >
-        ← Back to main menu
-      </button>
-
-      {view === "hardware" ? (
-        <HardwareInventory
-          inventory={hardwareInventory}
-          setInventory={setHardwareInventory}
-          editingId={editingId}
-          setEditingId={setEditingId}
-          editingField={editingField}
-          setEditingField={setEditingField}
-          menuOpenId={menuOpenId}
-          setMenuOpenId={setMenuOpenId}
-          lastDeleted={lastDeleted}
-          setLastDeleted={setLastDeleted}
-          undoTimeoutId={undoTimeoutId}
-          setUndoTimeoutId={setUndoTimeoutId}
-        />
-      ) : (
-        <MaterialInventory
-          materialInventory={materialInventory}
-          setMaterialInventory={setMaterialInventory}
-        />
-      )}
     </div>
   );
 }
